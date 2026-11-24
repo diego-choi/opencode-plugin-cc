@@ -33,7 +33,7 @@ opencode --version
 Inside Claude Code:
 
 ```bash
-! curl -fsSL https://raw.githubusercontent.com/armedi/opencode-plugin-cc/main/install.sh | bash
+! curl -fsSL https://raw.githubusercontent.com/diego-choi/opencode-plugin-cc/main/install.sh | bash
 ```
 
 The script clones this fork, prepares its locked V2 client dependencies in the
@@ -51,7 +51,7 @@ commands and hooks:
 Install the plugin in Claude Code:
 
 ```text
-/plugin install opencode@armedi-opencode-plugin-cc
+/plugin install opencode@diego-opencode-plugin-cc
 ```
 
 Choose your installation scope in the plugin panel (for example,
@@ -63,15 +63,15 @@ Choose your installation scope in the plugin panel (for example,
 ```
 
 If the plugin is already installed but disabled, enable it from the **Installed** tab (or run
-`/plugin enable opencode@armedi-opencode-plugin-cc`). Then run `/reload-plugins`
+`/plugin enable opencode@diego-opencode-plugin-cc`). Then run `/reload-plugins`
 and `/opencode:setup`. The marketplace was already registered by the installer;
 if Claude Code cannot find it, add it with
-`/plugin marketplace add armedi/opencode-plugin-cc` first.
+`/plugin marketplace add diego-choi/opencode-plugin-cc` first.
 
 For a fuller diagnostic:
 
 ```bash
-node ~/.claude/plugins/cache/armedi-opencode-plugin-cc/opencode/2.0.0/scripts/opencode-companion.mjs doctor
+node ~/.claude/plugins/cache/diego-opencode-plugin-cc/opencode/2.1.0/scripts/opencode-companion.mjs doctor
 ```
 
 Delegate a task:
@@ -83,7 +83,7 @@ Delegate a task:
 ### Uninstall
 
 ```text
-/plugin uninstall opencode@armedi-opencode-plugin-cc
+/plugin uninstall opencode@diego-opencode-plugin-cc
 /reload-plugins
 ```
 
@@ -92,6 +92,7 @@ Delegate a task:
 | Command | Purpose |
 | --- | --- |
 | `/opencode:review` | OpenCode's built-in `/review`; supports `--base <ref>` and `--scope` |
+| `/opencode:adversarial-review` | Read-only challenge review with optional focus text (fork addition; see below) |
 | `/opencode:delegate` | Delegate work; supports `--model`, `--agent`, `--resume`, `--fresh`, `--background` |
 | `/opencode:status` | Running/recent jobs for the current repository |
 | `/opencode:result` | Finished output and OpenCode session ID |
@@ -187,7 +188,7 @@ The old V1 idle/pgrep/strict-terminal environment settings are no longer used.
 - **Permission requested:** configure a narrow V2 `permissions` rule for the
   reported action/resource; the companion deliberately does not auto-approve.
 - **Plugin not loading:** rerun the script, explicitly run
-  `/plugin install opencode@armedi-opencode-plugin-cc`, then `/reload-plugins`.
+  `/plugin install opencode@diego-opencode-plugin-cc`, then `/reload-plugins`.
   Restart Claude Code if necessary.
 
 V2 reads global `~/.config/opencode/opencode.json(c)` (or `$XDG_CONFIG_HOME`)
@@ -211,3 +212,19 @@ the cached Claude Code plugin can run independently of this repository.
 Copyright 2026 OpenCode Plugin Contributors.
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and
 [NOTICE](NOTICE) for the license and attribution notices.
+
+## Fork notes (diego-choi/opencode-plugin-cc)
+
+This fork tracks `armedi/opencode-plugin-cc` (remote `upstream`) and adds:
+
+- `/opencode:adversarial-review [--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <provider/model>] [focus ...]`.
+  Upstream removed the command in `f012f68`. This version does not restore the
+  companion subcommand. `scripts/build-adversarial-prompt.mjs` collects the diff
+  with local git (the read-only task session denies shell), fills
+  `prompts/adversarial-review.md`, and the command dispatches it with
+  `task --agent plan`. Diffs over ~200 KiB are dropped per file and those files
+  are listed for OpenCode to read without a diff.
+- Korean review reports, and `disable-model-invocation` on delegate/setup.
+
+Sync upstream with `git fetch upstream && git merge upstream/main`.
+
