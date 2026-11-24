@@ -78,3 +78,38 @@ describe("build-adversarial-prompt", () => {
     assert.throws(() => build("--scope", "staged"));
   });
 });
+
+describe("build-adversarial-prompt edge cases", () => {
+  it("rejects --base combined with --scope working-tree and unknown flags", () => {
+    assert.throws(() => build("--base", "main", "--scope", "working-tree"));
+    assert.throws(() => build("--bsae", "main"));
+  });
+
+  it("lists untracked files from the repo root even when run in a subdirectory", () => {
+    fs.mkdirSync(path.join(repo, "sub"));
+    fs.writeFileSync(path.join(repo, "top.txt"), "new\n");
+    fs.writeFileSync(path.join(repo, "sub", "inner.txt"), "new\n");
+    const stdout = execFileSync("node", [BUILDER, "--out", out, "--scope", "working-tree"], {
+      cwd: path.join(repo, "sub"),
+      encoding: "utf8",
+    });
+    assert.equal(JSON.parse(stdout).untrackedFiles, 2);
+    const prompt = fs.readFileSync(out, "utf8");
+    assert.match(prompt, /^top\.txt$/m);
+    assert.match(prompt, /^sub\/inner\.txt$/m);
+  });
+
+  it("keeps non-ASCII paths readable and marks omitted deleted files", () => {
+    fs.writeFileSync(path.join(repo, "한글.txt"), `${"y".repeat(200)}\n`.repeat(1000));
+    git("add", ".");
+    git("commit", "-q", "-m", "add big");
+    git("rm", "-q", "한글.txt");
+    const summary = build("--scope", "working-tree");
+    assert.deepEqual(summary.omittedFiles, ["한글.txt"]);
+    assert.deepEqual(summary.deletedOmitted, ["한글.txt"]);
+    assert.equal(summary.coverage, "partial");
+    const prompt = fs.readFileSync(out, "utf8");
+    assert.match(prompt, /한글\.txt \(deleted; its old content is not available to you\)/);
+    assert.match(prompt, /Coverage is PARTIAL/);
+  });
+});

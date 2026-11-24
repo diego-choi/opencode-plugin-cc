@@ -233,7 +233,9 @@ async function handleTask(argv) {
       phase: "queued",
       logFile,
       request: {
-        taskText,
+        // The prompt itself goes to the worker via argv only. Storing it here
+        // bloated state.json and every `status --json` (fork change).
+        taskTextBytes: Buffer.byteLength(taskText, "utf8"),
         agentName,
         isWrite,
         resumeSessionId,
@@ -254,6 +256,24 @@ async function handleTask(argv) {
     if (options.model) workerArgs.push("--model", options.model);
 
     const child = spawnDetached("node", workerArgs, { cwd: workspace, logFile });
+    // Wait for the spawn outcome: an async 'error' (ENOENT, E2BIG, EACCES) would
+    // otherwise crash the parent after it already reported success and leave
+    // the job queued forever (fork change).
+    const spawnError = await new Promise((resolve) => {
+      child.once("spawn", () => resolve(null));
+      child.once("error", resolve);
+    });
+    if (spawnError) {
+      upsertJob(workspace, {
+        id: job.id,
+        status: "failed",
+        phase: "failed",
+        errorMessage: `Failed to start background worker: ${spawnError.message}`,
+        completedAt: new Date().toISOString(),
+      });
+      console.error(`Failed to start background worker for ${job.id}: ${spawnError.message}`);
+      process.exit(1);
+    }
     upsertJob(workspace, { id: job.id, pid: child.pid });
     console.log(`OpenCode task started in background: ${job.id}`);
     console.log("Check `/opencode:status` for progress.");

@@ -50,7 +50,8 @@ Return Markdown only, in exactly this shape. The first line must be the heading 
 
 # OpenCode Adversarial Review
 
-**Verdict:** `needs-attention` or `approve`
+**Verdict:** exactly one of `needs-attention` or `approve`
+**Coverage:** exactly one of `full` or `partial`, as stated in the review method above
 **Target:** the target line from the task above
 **Summary:** one or two sentences, written like a terse ship/no-ship assessment, not a neutral recap.
 
@@ -60,7 +61,7 @@ One block per finding, most severe first:
 
 ### 1. <short title>
 - **Severity:** critical | high | medium | low
-- **Location:** `path/to/file:line_start-line_end`
+- **Location:** `path/to/file:line` or `path/to/file:line_start-line_end` (repository-relative path)
 - **Confidence:** 0.0-1.0
 - **What can go wrong:** evidence and impact, citing the code path
 - **Recommendation:** a concrete change that reduces the risk

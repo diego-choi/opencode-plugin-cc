@@ -3,6 +3,7 @@
 // JSON state file, per-job files and logs.
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureDir, readJson, writeJson } from "./fs.mjs";
@@ -105,10 +106,51 @@ export function saveState(workspacePath, state) {
  * @returns {object} the updated state
  */
 export function updateState(workspacePath, mutator) {
-  const state = loadState(workspacePath);
-  mutator(state);
-  saveState(workspacePath, state);
-  return state;
+  return withStateLock(workspacePath, () => {
+    const state = loadState(workspacePath);
+    mutator(state);
+    saveState(workspacePath, state);
+    return state;
+  });
+}
+
+// Cross-process lock around read-modify-write of state.json (fork change).
+// Without it, concurrent workers/status calls in one workspace overwrite each
+// other's job records. mkdir is atomic on POSIX and Windows.
+const LOCK_TIMEOUT_MS = 10_000;
+const LOCK_STALE_MS = 30_000;
+const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+function withStateLock(workspacePath, fn) {
+  const root = stateRoot(workspacePath);
+  ensureDir(root);
+  const lockDir = path.join(root, "state.lock");
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      try {
+        if (Date.now() - fs.statSync(lockDir).mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        continue; // Lock vanished between mkdir and stat; retry.
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`Timed out waiting for state lock ${lockDir}`);
+      }
+      Atomics.wait(sleepBuffer, 0, 0, 10 + Math.floor(Math.random() * 20));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
 }
 
 /**

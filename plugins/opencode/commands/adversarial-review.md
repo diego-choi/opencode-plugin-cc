@@ -1,6 +1,6 @@
 ---
 description: Run an adversarial OpenCode review that challenges the implementation approach and design choices
-argument-hint: '[--wait|--background] [--base <ref>] [--scope auto|working-tree|branch] [--model <provider/model>] [focus ...]'
+argument-hint: '[--wait|--background] [--base <ref> | --scope auto|working-tree|branch] [--model <provider/model>] [focus ...]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
 ---
@@ -13,10 +13,11 @@ Raw slash-command arguments:
 `$ARGUMENTS`
 
 How it works:
-- `scripts/build-adversarial-prompt.mjs` collects the target diff with local git and fills `prompts/adversarial-review.md`.
-- The prompt is dispatched as a fresh read-only task (`task --agent plan`). That session denies edits, shell, and subagents, so OpenCode reviews from the inlined diff and its read/glob/grep tools.
-- The whole prompt is capped at 100 KiB (Linux allows 128 KiB per argv string). Diffs that do not fit are dropped per file; those files and untracked files are listed for OpenCode to read without a diff.
-- `--scope auto` picks: tracked changes → working tree; otherwise commits ahead of the base → branch diff; otherwise untracked files → working tree. Stray untracked files do not hide a branch diff.
+- `scripts/run-adversarial-review.mjs` is the single entry point. It collects the target diff with local git, fills `prompts/adversarial-review.md`, dispatches a fresh read-only task (`task --agent plan`: edits, shell, and subagents denied), waits, checks the job status, and validates the output contract.
+- The whole prompt is capped at 100 KiB (Linux allows 128 KiB per argv string). Diffs that do not fit are dropped per file and listed; coverage is then `partial` and the prompt forbids an `approve` verdict.
+- `--scope auto` picks: tracked changes → working tree; otherwise commits ahead of the base → branch diff; otherwise untracked files → working tree. `--base` cannot be combined with `--scope working-tree`.
+- Exit codes: 0 valid review, 1 dispatch/job failure, 2 wait timed out (job may still run; resume with `--task <id>`), 3 output violates the contract (raw output still printed), 4 nothing to review. `--meta <file>` writes a JSON summary (status, taskId, verdict, coverage, parsed findings, errors).
+- Other skills should call the script directly rather than this command.
 
 Core constraint:
 - This command is review-only.
@@ -26,7 +27,7 @@ Core constraint:
 
 Execution mode rules:
 - If the raw arguments include `--wait`, do not ask. Run in the foreground.
-- If the raw arguments include `--background`, do not ask. Run with a Claude background Bash waiter.
+- If the raw arguments include `--background`, do not ask. Run with `Bash` `run_in_background: true`.
 - Otherwise, estimate the review size before asking:
   - For working-tree review, start with `git status --short --untracked-files=all`.
   - For working-tree review, also inspect both `git diff --shortstat --cached` and `git diff --shortstat`.
@@ -40,53 +41,26 @@ Execution mode rules:
   - `Run in background`
 
 Argument handling:
-- Keep `--base <ref>` and `--scope <scope>` as separate shell words for the builder.
-- Pass `--model <provider/model>` to both the builder (it ignores it) and the companion `task` call.
-- Everything else is focus text. Pass it to the builder as one safely single-quoted argument, preserving the user's wording exactly.
-- Staged-only or unstaged-only review is not supported; working-tree review covers staged, unstaged, and untracked changes against `HEAD`.
+- Pass `--base`, `--scope`, and `--model` with their values as separate shell words. Drop `--wait` / `--background` (they only choose how you run Bash).
+- Everything else is focus text: pass it after `--` as one safely single-quoted argument, preserving the user's wording exactly.
 
-Dispatch (one Bash call; replace `<builder args>` and `<model flag>` per the rules above):
+Run (replace `<args>` per the rules above):
 ```bash
-PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/opencode-adversarial.XXXXXX")"
-SUMMARY="$(node "${CLAUDE_PLUGIN_ROOT}/scripts/build-adversarial-prompt.mjs" --out "$PROMPT_FILE" <builder args>)" || exit 1
-printf '%s\n' "$SUMMARY"
-case "$SUMMARY" in *'"empty":true'*) rm -f "$PROMPT_FILE"; exit 0;; esac
-node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" task --background --agent plan <model flag> "$(cat "$PROMPT_FILE")"
-rm -f "$PROMPT_FILE"
+META="$(mktemp "${TMPDIR:-/tmp}/opencode-adversarial-meta.XXXXXX")"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/run-adversarial-review.mjs" --meta "$META" --timeout 3600 <args>
+code=$?
+echo "--- meta ($code)"; cat "$META"; rm -f "$META"
+exit $code
 ```
-- If the summary has `"empty":true`, tell the user there is nothing to review for that target and stop.
-- If the summary lists `omittedFiles`, tell the user which files were reviewed without a diff.
-- Capture the `task-...` ID from the companion output. Do not add `--resume-last` or `--write`.
+- Foreground: use a Bash timeout of 600000 ms and add `--timeout 570` instead of 3600. On exit 2, rerun the same block with `--task <taskId from meta>` (no other args) up to 5 more times, then report the task ID and offer `/opencode:status`, `/opencode:result`, or `/opencode:cancel`.
+- Background: launch the block with `run_in_background: true`, tell the user "OpenCode adversarial review started in the background. Results arrive when it finishes; `/opencode:status` shows progress.", and report when the notification arrives.
 
-Foreground waiting:
-- Call the following with a Bash timeout of 600000 ms, up to 20 rounds:
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" status <task-id> --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" wait-and-result <task-id> --max-wait 480
-```
-- Exit 0: the terminal `## Job:` report is ready; report it per "Korean report".
-- Exit 2: still running; wait again with the same task ID.
-- Exit 1 or missing report: report `ERROR: companion dispatch failed (<reason>)`.
-- After 20 timeouts: report the task ID and offer `/opencode:status`, `/opencode:result`, or `/opencode:cancel`. Do not dispatch a duplicate job.
-
-Background waiting:
-- Launch this loop through `Bash` with `run_in_background: true`, replacing `<task-id>`:
-```bash
-for ((round = 0; round < 20; round++)); do
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" status <task-id> --json
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" wait-and-result <task-id> --max-wait 480
-  code=$?
-  if [ "$code" -ne 2 ]; then
-    exit "$code"
-  fi
-done
-printf '%s\n' 'OpenCode task <task-id> is still running after 20 wait rounds; check /opencode:status or /opencode:result.'
-exit 2
-```
-- Tell the user: "OpenCode adversarial review started in the background (<task-id>). Check `/opencode:status` for progress."
-- When the background notification arrives, report the result per "Korean report".
+Reporting by exit code:
+- 0 or 3: report the review per "Korean report". For 3, say first that the output did not follow the contract and list the meta `errors`.
+- 1: report `ERROR: OpenCode adversarial review failed (<meta status>): <meta errors>`. Do not substitute your own review.
+- 4: say there is nothing to review for the meta `target`.
+- If meta `coverage` is `partial`, list `omittedFiles` as reviewed without a diff, and include any meta `warnings`.
 
 Korean report:
-- Follow the "Korean report" rules in `commands/review.md`. The OpenCode output starts with `# OpenCode Adversarial Review`; include its verdict (`needs-attention` / `approve`) in the one-line overall verdict and each finding's confidence in the 심각도 column (e.g. `high (0.8)`).
-- If the output does not follow that shape, still report every finding you can identify, and say the output format was off.
+- Follow the "Korean report" rules in `commands/review.md`. Include the verdict (`needs-attention` / `approve`) and coverage in the one-line overall verdict and each finding's confidence in the 심각도 column (e.g. `high (0.8)`).
 - Do not fix any issues mentioned in the review output.
