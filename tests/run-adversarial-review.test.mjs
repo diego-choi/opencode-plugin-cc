@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseReviewOutput, parseJobReport } from "../plugins/opencode/scripts/run-adversarial-review.mjs";
+import { parseReviewOutput, parseJobReport, enforceConsistency } from "../plugins/opencode/scripts/run-adversarial-review.mjs";
 
 const GOOD = `Some preamble the model added.
 
@@ -68,5 +68,24 @@ describe("parseJobReport", () => {
     const failed = parseJobReport("## Job: task-2\n\n- **Type**: task\n- **Status**: failed\n\n### Error\n\nprovider auth expired\n");
     assert.equal(failed.status, "failed");
     assert.equal(failed.error.trim(), "provider auth expired");
+  });
+});
+
+describe("enforceConsistency", () => {
+  const approveHigh = "# OpenCode Adversarial Review\n\n**Verdict:** approve\n**Coverage:** full\n\n## Findings\n\n### 1. X\n- **Severity:** high\n- **Location:** `a.js:1`\n";
+  const approveClean = "# OpenCode Adversarial Review\n\n**Verdict:** approve\n**Coverage:** full\n\n## Findings\n\nNo material findings.\n";
+
+  it("rejects approve with a high finding", () => {
+    assert.equal(enforceConsistency(parseReviewOutput(approveHigh), "full").ok, false);
+  });
+
+  it("rejects approve and a full-coverage claim when the builder omitted files", () => {
+    const r = enforceConsistency(parseReviewOutput(approveClean), "partial");
+    assert.equal(r.ok, false);
+    assert.equal(r.errors.length, 2);
+  });
+
+  it("accepts a clean approve on full coverage", () => {
+    assert.equal(enforceConsistency(parseReviewOutput(approveClean), "full").ok, true);
   });
 });

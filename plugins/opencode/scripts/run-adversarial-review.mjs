@@ -105,6 +105,26 @@ export function parseReviewOutput(text) {
 }
 
 /**
+ * Cross-field rules the model must follow. The builder knows the real
+ * coverage; the model's claim cannot widen it.
+ * @param {ReturnType<typeof parseReviewOutput>} parsed mutated: errors/ok
+ * @param {string|null} builderCoverage
+ */
+export function enforceConsistency(parsed, builderCoverage) {
+  if (builderCoverage === "partial" && parsed.coverage === "full") {
+    parsed.errors.push("model reported full coverage but the builder omitted part of the change");
+  }
+  if ((builderCoverage ?? parsed.coverage) === "partial" && parsed.verdict === "approve") {
+    parsed.errors.push("approve verdict on partial coverage is not allowed");
+  }
+  if (parsed.verdict === "approve" && parsed.findings.some((f) => f.severity === "critical" || f.severity === "high")) {
+    parsed.errors.push("approve verdict with critical/high findings");
+  }
+  parsed.ok = parsed.errors.length === 0;
+  return parsed;
+}
+
+/**
  * Split the companion's rendered `## Job:` report into status and body.
  * @param {string} rendered
  */
@@ -196,12 +216,7 @@ async function run(argv, meta) {
       const parsed = parseReviewOutput(report.output ?? "");
       Object.assign(meta, { verdict: parsed.verdict ?? null, findings: parsed.findings });
       meta.coverage ??= parsed.coverage ?? null;
-      if (meta.coverage === "partial" && parsed.coverage === "full") {
-        meta.warnings.push("model reported full coverage but some diffs were omitted");
-      }
-      if (meta.coverage === "partial" && parsed.verdict === "approve") {
-        meta.warnings.push("approve verdict on partial coverage; treat as not approved");
-      }
+      enforceConsistency(parsed, meta.coverage);
       process.stdout.write(`${parsed.markdown}\n`);
       if (!parsed.ok) {
         meta.status = "format-error";

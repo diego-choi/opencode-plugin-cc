@@ -112,4 +112,11 @@ describe("build-adversarial-prompt edge cases", () => {
     assert.match(prompt, /한글\.txt \(deleted; its old content is not available to you\)/);
     assert.match(prompt, /Coverage is PARTIAL/);
   });
+
+  it("treats an untracked list over the cap as partial coverage", () => {
+    for (let i = 0; i < 205; i++) fs.writeFileSync(path.join(repo, `n${i}.txt`), "x\n");
+    const summary = build("--scope", "working-tree");
+    assert.equal(summary.untrackedDropped, 5);
+    assert.equal(summary.coverage, "partial");
+  });
 });

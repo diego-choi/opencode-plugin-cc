@@ -117,18 +117,23 @@ export function updateState(workspacePath, mutator) {
 // Cross-process lock around read-modify-write of state.json (fork change).
 // Without it, concurrent workers/status calls in one workspace overwrite each
 // other's job records. mkdir is atomic on POSIX and Windows.
-const LOCK_TIMEOUT_MS = 10_000;
-const LOCK_STALE_MS = 30_000;
+// The wait budget exceeds the stale threshold so a lock left by a crashed
+// process is always broken before a waiter gives up.
+const LOCK_STALE_MS = 15_000;
+const LOCK_TIMEOUT_MS = 25_000;
 const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 function withStateLock(workspacePath, fn) {
   const root = stateRoot(workspacePath);
   ensureDir(root);
   const lockDir = path.join(root, "state.lock");
+  const ownerFile = path.join(lockDir, "owner");
+  const token = `${process.pid}-${crypto.randomBytes(6).toString("hex")}`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   for (;;) {
     try {
       fs.mkdirSync(lockDir);
+      fs.writeFileSync(ownerFile, token);
       break;
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
@@ -149,7 +154,15 @@ function withStateLock(workspacePath, fn) {
   try {
     return fn();
   } finally {
-    fs.rmSync(lockDir, { recursive: true, force: true });
+    // Release only our own lock: if it was judged stale and taken over, the
+    // new holder's lock must survive.
+    let owner = null;
+    try {
+      owner = fs.readFileSync(ownerFile, "utf8");
+    } catch {
+      // Already gone.
+    }
+    if (owner === token) fs.rmSync(lockDir, { recursive: true, force: true });
   }
 }
 
