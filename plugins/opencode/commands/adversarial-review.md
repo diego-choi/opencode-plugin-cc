@@ -15,7 +15,8 @@ Raw slash-command arguments:
 How it works:
 - `scripts/build-adversarial-prompt.mjs` collects the target diff with local git and fills `prompts/adversarial-review.md`.
 - The prompt is dispatched as a fresh read-only task (`task --agent plan`). That session denies edits, shell, and subagents, so OpenCode reviews from the inlined diff and its read/glob/grep tools.
-- Diffs over the inline budget (~200 KiB) are dropped per file; those files and untracked files are listed for OpenCode to read without a diff.
+- The whole prompt is capped at 100 KiB (Linux allows 128 KiB per argv string). Diffs that do not fit are dropped per file; those files and untracked files are listed for OpenCode to read without a diff.
+- `--scope auto` picks: tracked changes → working tree; otherwise commits ahead of the base → branch diff; otherwise untracked files → working tree. Stray untracked files do not hide a branch diff.
 
 Core constraint:
 - This command is review-only.

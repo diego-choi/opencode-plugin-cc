@@ -222,7 +222,7 @@ This fork tracks `armedi/opencode-plugin-cc` (remote `upstream`) and adds:
   companion subcommand. `scripts/build-adversarial-prompt.mjs` collects the diff
   with local git (the read-only task session denies shell), fills
   `prompts/adversarial-review.md`, and the command dispatches it with
-  `task --agent plan`. Diffs over ~200 KiB are dropped per file and those files
+  `task --agent plan`. The prompt is capped at 100 KiB; diffs that do not fit are dropped per file and those files
   are listed for OpenCode to read without a diff.
 - Korean review reports, and `disable-model-invocation` on delegate/setup.
 

@@ -2,7 +2,7 @@
 description: Show final output for a finished OpenCode job, including session ID for resuming
 argument-hint: '[job-id-prefix]'
 disable-model-invocation: true
-allowed-tools: Bash(node:*)
+allowed-tools: Read, Glob, Grep, Bash(node:*)
 ---
 
 Run the result command.
