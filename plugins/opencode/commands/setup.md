@@ -2,6 +2,7 @@
 description: Check whether the local OpenCode CLI is ready and optionally toggle the stop-time review gate
 argument-hint: '[--enable-review-gate|--disable-review-gate]'
 allowed-tools: Bash(node:*), Bash(npm:*), Bash(brew:*), Bash(curl:*), AskUserQuestion
+disable-model-invocation: true
 ---
 
 Run:

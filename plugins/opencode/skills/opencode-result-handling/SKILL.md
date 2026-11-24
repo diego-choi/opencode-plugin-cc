@@ -8,7 +8,7 @@ user-invocable: false
 
 ## Returning Results
 
-Return the companion's terminal report verbatim. It includes job status, session ID when available, and output or an error. Changed files appear only when captured; the report is not a full session trace.
+Return the companion's terminal report verbatim — except review results, which are reported in Korean per the "Korean report" rules in `commands/review.md` (local customization). It includes job status, session ID when available, and output or an error. Changed files appear only when captured; the report is not a full session trace.
 
 Claude dispatches and waits directly through Bash. Return OpenCode's report rather than implementing a substitute solution.
 

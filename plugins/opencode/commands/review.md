@@ -13,7 +13,7 @@ Raw slash-command arguments:
 Core constraint:
 - This command is review-only.
 - Do not fix issues, apply patches, or suggest that you are about to make changes.
-- Your only job is to run the review and return OpenCode's output verbatim to the user.
+- Your only job is to run the review and report OpenCode's result to the user in Korean (see "Korean report" below).
 
 Execution mode rules:
 - If the raw arguments include `--wait`, do not ask. Run the review in the foreground.
@@ -44,9 +44,16 @@ Foreground flow:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" review $ARGUMENTS
 ```
-- Return the command stdout verbatim, exactly as-is.
-- Do not paraphrase, summarize, or add commentary before or after it.
+- Report the result in Korean (see "Korean report" below). Do not paste the English output as-is.
 - Do not fix any issues mentioned in the review output.
+
+Korean report (local customization — applies to foreground results and to background results read later via `/opencode:result`):
+- Start with a one-line overall verdict (e.g. 정확성 버그 유무, 지적 건수와 최고 심각도).
+- List every finding in a table: 번호 | 지적 (한국어로 풀어 쓴 내용) | 심각도 | 위치 (`file:line` 그대로) | 판단.
+- Keep code identifiers, file paths, line numbers, and commands in their original form; translate only the prose.
+- Do not drop or merge findings. If OpenCode reports what it verified (build/test runs), include that in one line.
+- The 판단 column is your short assessment of whether the finding holds against the actual code; open the cited code before judging, and say so when you could not verify.
+- End with the path or job id where the original English output can be read.
 
 Background flow:
 - Launch the review with `Bash` in the background:

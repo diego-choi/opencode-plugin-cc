@@ -1,6 +1,6 @@
 ---
 name: opencode-runtime
-description: Delegate directly to OpenCode when the user requests it, Claude is stuck, or a substantial debugging or implementation task needs a second pass. Use the companion runtime without a Claude subagent.
+description: Dispatch flow for the /opencode:delegate command. Use ONLY when the user explicitly invoked /opencode:delegate in this turn; never invoke on your own initiative (not when stuck, not for a second pass). Local security customization.
 user-invocable: false
 allowed-tools: Skill Read AskUserQuestion Bash
 ---
