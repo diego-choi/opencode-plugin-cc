@@ -71,7 +71,7 @@ if Claude Code cannot find it, add it with
 For a fuller diagnostic:
 
 ```bash
-node ~/.claude/plugins/cache/diego-opencode-plugin-cc/opencode/2.1.0/scripts/opencode-companion.mjs doctor
+node ~/.claude/plugins/cache/diego-opencode-plugin-cc/opencode/2.2.0/scripts/opencode-companion.mjs doctor
 ```
 
 Delegate a task:
